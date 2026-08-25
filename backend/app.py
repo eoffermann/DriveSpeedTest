@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from dataclasses import asdict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -34,7 +35,18 @@ app.add_middleware(
 # Only one benchmark may touch a drive at a time.
 _run_lock = asyncio.Lock()
 
-_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+def _frontend_dir() -> str:
+    """Locate the built React bundle in both source and PyInstaller-frozen runs.
+
+    When frozen, the spec adds frontend/dist under the onefile unpack dir
+    (``sys._MEIPASS``); otherwise it sits next to the repo root.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)), "frontend", "dist")
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+
+
+_DIST = _frontend_dir()
 
 
 # --- REST --------------------------------------------------------------------

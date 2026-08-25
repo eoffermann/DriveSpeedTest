@@ -35,7 +35,19 @@ health, and the marketing claims you paste in.
   sustained curve in real time, and lets you edit the marketing text to re-grade
   instantly. Export a JSON or text report.
 
-## Quick start
+## Download (no install)
+
+Grab **`DriveSpeedTest.exe`** from the
+[latest release](https://github.com/eoffermann/DriveSpeedTest/releases/latest) and
+double-click it. It's a single self-contained file — no Python, Node, or install
+needed. It asks for administrator rights via UAC (for full SMART health); decline
+and it still runs, just without SMART. It starts a local server and opens your
+browser at <http://127.0.0.1:8760>.
+
+> Windows SmartScreen may warn about an unsigned exe from a new publisher — choose
+> *More info → Run anyway*, or build it yourself (below).
+
+## Quick start (from source)
 
 ```bat
 git clone https://github.com/eoffermann/DriveSpeedTest.git
@@ -43,9 +55,10 @@ cd DriveSpeedTest
 run.bat
 ```
 
-`run.bat` creates a virtual environment, installs the Python deps, builds the
-React frontend, starts the server on <http://127.0.0.1:8760>, and opens your
-browser. First run takes a minute (npm build); later runs are instant.
+`run.bat` self-elevates via UAC, creates a virtual environment, installs the
+Python deps, builds the React frontend, starts the server on
+<http://127.0.0.1:8760>, and opens your browser. First run takes a minute (npm
+build); later runs are instant.
 
 For full SMART health (temperature, wear, error counts) over a USB bridge, either
 run elevated:
@@ -77,6 +90,28 @@ cd frontend && npm run dev
 ```
 
 Then open <http://localhost:5173>.
+
+## Building the single-file exe
+
+```bat
+build.bat
+```
+
+This builds the frontend and packages everything (backend, UI, and Python) into
+`dist\DriveSpeedTest.exe` with PyInstaller, using `DriveSpeedTest.spec`.
+
+### Cutting a release
+
+Pushing a version tag builds the exe on a Windows CI runner and attaches it to a
+GitHub Release automatically (see `.github/workflows/release.yml`):
+
+```bat
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+You can also trigger the workflow manually from the **Actions** tab to get the exe
+as a build artifact without publishing a release.
 
 ## How it works
 
