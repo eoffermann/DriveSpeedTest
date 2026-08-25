@@ -1,103 +1,113 @@
-# README
+# DriveSpeedTest
 
-## Introduction
-This script is designed to perform drive speed tests on a selected drive. The tests include sequential read/write and random read/write operations. The script uses the Gradio library to create an interface for selecting the drive and displaying the test results.
+An **honest** external-drive profiler for Windows. Point it at a drive and it
+tells you not just how fast it is, but whether it lives up to its marketing —
+and if it doesn't, **whether the bottleneck is the drive, the cable, or the USB
+port.**
 
-## Installation and Setup
-To install the script, follow these steps:
+It exists because most quick "drive speed" scripts lie: they write compressible
+zeros, never flush to the device, and re-read data straight from RAM. The numbers
+look great and mean nothing. DriveSpeedTest measures the real device with the OS
+cache bypassed, then cross-checks the result against the drive's USB link, SMART
+health, and the marketing claims you paste in.
 
-### Step 1: Clone the Git Repository
-Clone the drive speed test repository using the following command:
-```bash
+![stack: FastAPI + React](https://img.shields.io/badge/stack-FastAPI%20%2B%20React-38bdf8)
+
+---
+
+## What it does
+
+- **Real throughput.** Sequential and random 4K read/write measured with
+  incompressible data and unbuffered, write-through I/O (`FILE_FLAG_NO_BUFFERING`)
+  — so results reflect the drive, not the cache.
+- **Sustained-write / SLC-cache test.** Writes multiple GiB and charts throughput
+  over time to expose the "cliff" where the fast SLC cache fills and the drive
+  drops to its native TLC speed. This is the only real test of a
+  *"stable write speeds without slowdown"* claim.
+- **Connection diagnosis.** Reads the **negotiated USB link speed** (via the same
+  `DeviceIoControl` USB tree-walk USBView uses), the host controllers, TRIM state,
+  filesystem, and SMART health. A drive rated 2100 MB/s that negotiated only
+  5 Gbps is being throttled by the cable/port — not the flash.
+- **Marketing verdict.** Paste the vendor blurb; it grades each claim
+  (read / write / sustained / TRIM / SMART / TLC) against what was measured and
+  returns a **ranked diagnosis** with concrete next steps.
+- **Live UI.** A React dashboard streams the benchmark over a WebSocket, draws the
+  sustained curve in real time, and lets you edit the marketing text to re-grade
+  instantly. Export a JSON or text report.
+
+## Quick start
+
+```bat
 git clone https://github.com/eoffermann/DriveSpeedTest.git
-```
-
-### Step 2: Change Directory
-Change into the cloned repository directory using the following command:
-```bash
 cd DriveSpeedTest
+run.bat
 ```
 
-### Step 3: Create a Conda Environment
-Create a new Conda environment using the following command:
-```bash
-conda create --name drive_speed_test python=3.10.11
-```
-Replace `drive_speed_test` with your desired environment name.
+`run.bat` creates a virtual environment, installs the Python deps, builds the
+React frontend, starts the server on <http://127.0.0.1:8760>, and opens your
+browser. First run takes a minute (npm build); later runs are instant.
 
-### Step 4: Activate the Environment
-Activate the newly created environment using the following command:
-```bash
-conda activate drive_speed_test
+For full SMART health (temperature, wear, error counts) over a USB bridge, either
+run elevated:
+
+```bat
+run.bat --admin
 ```
 
-### Step 5: Install Requirements
-Install the required packages from the `requirements.txt` file using pip:
-```bash
-pip install -r requirements.txt
-```
-The `requirements.txt` file should contain the following lines:
-
-### Step 6: Verify Installation
-Verify that the installation was successful by running the script. You should see the Gradio interface with a dropdown menu of available drives. To run the script, use the command:
-```bash
-python test.py
-```
-Replace `test.py` with the actual name of your script file.
-
-By following these steps, you should have a fully functional drive speed test environment set up and ready to use.
-
-## Running the Script
-To run the script, follow these steps:
-
-1. Navigate to the directory containing the script using your command line or terminal.
-2. Run the script using Python:
-```bash
-python test.py
-```
-Replace `test.py` with the actual name of your script file.
-
-3. Open a web browser and navigate to `http://localhost:7860/`. You should see the Gradio interface with a dropdown menu of available drives.
-4. Select a drive from the dropdown menu and click the "Submit" button to start the tests.
-
-## What to Expect
-The script will perform the following tests:
-
-* Sequential Write Test: Writes a large file to the selected drive and measures the time it takes to complete.
-* Sequential Read Test: Reads the same file and measures the time it takes to complete.
-* Random Write Test: Writes random data to the selected drive in small blocks and measures the time it takes to complete.
-* Random Read Test: Reads the same data and measures the time it takes to complete.
-
-The results of the tests will be displayed in the output text area, including:
-
-* Sequential Write Speed (MB/s)
-* Sequential Read Speed (MB/s)
-* Random Write Speed (MB/s)
-* Random Read Speed (MB/s)
-
-## Troubleshooting
-If you encounter any issues while running the script, check the following:
-
-* Make sure you have administrative privileges to run the script.
-* Verify that the selected drive has enough free space to perform the tests.
-* Check for any errors in the output text area or the command line.
+…or install [smartmontools](https://www.smartmontools.org/) so `smartctl` is on
+your PATH. Without either, everything except SMART still works, and the UI shows a
+"run as administrator" banner.
 
 ## Requirements
-The script requires the following dependencies:
 
-* Python 3.9+
-* Gradio library (`pip install gradio`)
-* Psutil library (`pip install psutil`)
+- **Windows 10/11** (uses Windows-specific APIs for unbuffered I/O, the USB tree,
+  and SMART).
+- **Python 3.9+** and **Node.js 18+** on your PATH.
 
-## Known Limitations
-The script has the following limitations:
+## Development
 
-* The tests may take some time to complete depending on the size of the test file and the speed of the drive.
-* The script is designed for testing purposes only and should not be used in production environments without proper modifications and error handling.
+Two terminals, with hot reload:
 
-## Future Development
-\Future development plans include:
+```bat
+:: backend
+.venv\Scripts\python -m uvicorn backend.app:app --reload --port 8760
 
-* Adding support for multiple drives at once
-* Improving error handling and logging
-* Adding additional tests for other types of storage devices
+:: frontend (Vite dev server proxies /api and /ws to :8760)
+cd frontend && npm run dev
+```
+
+Then open <http://localhost:5173>.
+
+## How it works
+
+```
+frontend/ (React + Vite + TS)  ──REST /api──▶  backend/ (FastAPI)
+        └───────────── WebSocket /ws/run ─────────────┘
+```
+
+| Module | Responsibility |
+| --- | --- |
+| `backend/ioengine.py` | Unbuffered, sector-aligned Win32 I/O (`CreateFileW` + `NO_BUFFERING`/`WRITE_THROUGH`). |
+| `backend/benchmark.py` | Sequential/random/sustained tests with live progress callbacks. |
+| `backend/usb.py` | Negotiated USB link speed via `DeviceIoControl` (USBView method). |
+| `backend/smart.py` | SMART via `smartctl` → Windows reliability counters fallback. |
+| `backend/drives.py` / `diagnostics.py` | Drive metadata, TRIM, filesystem, controller chain. |
+| `backend/analysis.py` | Parses the marketing blurb and produces the ranked verdict. |
+| `backend/app.py` | REST + WebSocket, and serves the built frontend. |
+
+### Why the numbers can be *lower* than a "normal" speed test
+
+Because they're honest. If a competing tool shows 1800 MB/s reads on a USB drive
+whose link tops out near 1000 MB/s, it's reading from RAM cache. DriveSpeedTest
+reports what the device actually delivered. If that's below the marketing claim,
+the **Diagnosis** tab tells you why.
+
+## Safety
+
+Tests write temporary files (`.drivespeedtest*.tmp`) to the target drive and
+always delete them. Free space is checked first and the write budget is capped.
+The system drive is refused by default.
+
+## License
+
+See [LICENSE](LICENSE).
