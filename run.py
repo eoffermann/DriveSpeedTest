@@ -13,13 +13,14 @@ Usage:
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 import threading
 import time
 import webbrowser
 
-HOST = "127.0.0.1"
-PORT = 8760
+HOST = os.environ.get("DST_HOST", "127.0.0.1")
+PORT = int(os.environ.get("DST_PORT", "8760"))
 URL = f"http://{HOST}:{PORT}"
 
 FROZEN = getattr(sys, "frozen", False)

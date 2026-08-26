@@ -4,6 +4,7 @@ import type { Benchmark, Diagnostics, Drive, RunEvent, Status, Verdict } from ".
 import { humanSize, num } from "./format";
 import { Badge, BusBadge } from "./components/ui";
 import { Results } from "./components/Results";
+import { DEMO, demoStateFromLocation } from "./demo";
 
 const DEPTHS = [
   { key: "quick", label: "Quick", hint: "~1 GiB · no sustained" },
@@ -39,8 +40,28 @@ export default function App() {
   const [error, setError] = useState<string>("");
   const cancelRef = useRef<(() => void) | null>(null);
 
-  // Initial load.
+  // Initial load. In demo mode (?demo=...), populate from fixtures instead of the
+  // API so documentation screenshots are deterministic and hardware-independent.
   useEffect(() => {
+    const demo = demoStateFromLocation();
+    if (demo) {
+      setStatus(DEMO.status);
+      setDrives(DEMO.drives);
+      setSelected("E");
+      setBlurb(DEMO.blurb);
+      setPreDiag(DEMO.diagnostics);
+      if (demo === "results") {
+        setBenchmark(DEMO.benchmark);
+        setDiagnostics(DEMO.diagnostics);
+        setVerdict(DEMO.verdict);
+      } else if (demo === "live") {
+        setRunning(true);
+        setPhaseLabel(DEMO.live.phaseLabel);
+        setLive(DEMO.live.metrics);
+        setSustainedPoints(DEMO.live.sustainedPoints);
+      }
+      return;
+    }
     api.status().then((s) => { setStatus(s); if (!blurb) setBlurb(s.default_blurb); }).catch(() => {});
     api.drives().then((ds) => {
       setDrives(ds);
@@ -52,14 +73,14 @@ export default function App() {
 
   // Pre-run diagnostics when the selected drive changes (shows link/SMART early).
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || demoStateFromLocation()) return;
     setPreDiag(null);
     api.diagnostics(selected).then(setPreDiag).catch(() => {});
   }, [selected]);
 
   // Live re-grade when the marketing text is edited after a run.
   useEffect(() => {
-    if (!benchmark || !diagnostics || running) return;
+    if (!benchmark || !diagnostics || running || demoStateFromLocation()) return;
     const t = setTimeout(() => {
       api.analyze(blurb, benchmark, diagnostics).then(setVerdict).catch(() => {});
     }, 450);
